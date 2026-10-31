@@ -1,58 +1,111 @@
-🛡️ TaintGuard: Provenance-Aware AI Agent Firewall
+# 🛡️ TaintGuard: Provenance-Aware AI Agent Firewall
 
-Built for PARALLAX 2026 — Track 01: AGENTSHIELD
+[![Track](https://img.shields.io/badge/PARALLAX_2026-Track_01:_AGENTSHIELD-crimson?style=for-the-badge)](#)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python)](#)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Live_Cloud_App-FF4B4B?style=for-the-badge&logo=streamlit)](#)
+[![Security](https://img.shields.io/badge/Posture-Fail--Closed_Zero_Trust-success?style=for-the-badge)](#)
 
-Autonomous AI agents are incredibly powerful, right up until they read a malicious, prompt-injected vendor email and quietly exfiltrate your company's production API keys to an attacker's drop server.
+**Built by Team KAIZEN** | *Theme Alignment: Build. Break Safely. Prove the Fix.*
 
-TaintGuard is a defensive security layer that fixes this vulnerability at the architecture level. Instead of just running basic keyword filters on what the user types, TaintGuard tracks Data Provenance. The moment an agent ingests an untrusted document or web page, the session is marked as TAINTED. If that tainted agent subsequently attempts to execute a high-impact tool, our Policy Enforcement Point (PEP) intercepts the call, flags the hijacked intent, and securely fails closed.
+Autonomous AI workspace agents are connected to high-impact corporate financial APIs, employee PII/payroll secrets, and internal tool permissions. While traditional LLM filters only inspect what the *user* types, **TaintGuard** secures the execution layer by tracking **Data Provenance** (`TAINTED` vs. `UNTAINTED` state) and enforcing a deterministic + semantic **Policy Enforcement Point (PEP)** before any tool can execute.
 
-Theme Alignment: Build. Break Safely. Prove the Fix.
+---
 
-🚨 The Threat Model
+## 🚨 Threat Model & Problem Statement
 
-AI agents can read documents, call tools, and take actions on behalf of users. Traditional filtering only secures the user's initial prompt. But what happens when the user safely asks the agent to "Summarize Invoice #9941," and that invoice contains a hidden instruction to export the payroll database? The agent obeys the untrusted document, bypassing standard defenses.
+* **What is at Risk:** Corporate financial APIs, employee PII/payroll secrets, and internal tool permissions connected to an autonomous AI workspace assistant.
+* **Who the Attacker Is:** External threat actors embedding indirect prompt injections inside vendor invoices, emails, or web pages read by the agent.
+* **Why Traditional Prompt Filters Fail:** The user's direct prompt (*"Summarize Invoice #9941"*) is 100% benign. The attack arrives mid-session through a data-retrieval tool call (`read_external_document`).
 
-🛠️ The Solution
+---
 
-TaintGuard implements a Zero-Trust Policy Enforcement Point (PEP) using four core mechanics:
+## 🏗️ System Architecture & Execution Flow
 
-Signed Tool Permission Profiles: Every tool is assigned a cryptographic signature and a permission tier (e.g., TIER_1_SAFE_READ vs. TIER_3_ADMIN_ONLY).
+GitHub natively renders the architecture flow below, illustrating how TaintGuard intercepts tool requests and enforces our **Deterministic Failsafe**:
 
-Dynamic Taint Tracking: Reading an external email or web page instantly flips the session state to 🔴 TAINTED.
+```mermaid
+flowchart TD
+    User(["👤 Human User<br/>(Trusted Root Prompt)"]) --> Agent["🤖 AI Workspace Agent<br/>(ApexCorp FinOps)"]
+    ExtDoc[("📄 External Document / Invoice<br/>(Untrusted Data Source)")] -. "Ingested via Tool" .-> TaintEngine
 
-Semantic Verification: If a tainted agent requests a sensitive tool, the PEP evaluates the request against the original, trusted user prompt. If the intent is hijacked, it returns an explicit DENY.
+    subgraph TaintGuard_Runtime ["🛡️ TaintGuard Security Layer (Python Runtime)"]
+        TaintEngine["🔄 Dynamic Provenance Tracker<br/>Flips Context: UNTAINTED ➡️ TAINTED"]
+        PEP{"🚧 Policy Enforcement Point<br/>(Deterministic + Semantic Gate)"}
+        Failsafe["⚙️ Deterministic Failsafe<br/>(Active if API Offline / High Latency)"]
+        Semantic["🧠 Gemini Semantic Judge<br/>(Compares Tool Call vs. Root Prompt)"]
+        Audit[("📜 Immutable Audit Log<br/>(Cryptographic / JSON Trail)")]
+    end
 
-Human-in-the-Loop Gate: High-impact actions are paused for explicit user confirmation, ensuring a fail-closed posture when confidence is low.
+    Agent -- "Requests Tool Call" --> PEP
+    TaintEngine -- "Passes Session State" --> PEP
 
-💻 Live Demonstration Scenarios
+    PEP -- "TIER_3 Unauthorized" --> Deny["❌ HARD DENY<br/>(Role Boundary Violation)"]
+    PEP -- "UNTAINTED + TIER_1" --> Allow["✅ ALLOW<br/>(Execute Tool)"]
+    PEP -- "TAINTED + TIER_2/3" --> Semantic
+    Semantic -. "API Timeout / No Key" .-> Failsafe
+    
+    Semantic -- "Intent Hijacked" --> Deny
+    Semantic -- "Ambiguous / Sensitive" --> HITL["⚠️ REQUIRE_APPROVAL<br/>(Human-in-the-Loop Gate)"]
+    Failsafe -- "Strict Fail-Closed" --> Deny
 
-Our simulated "ApexCorp FinOps Assistant" features an interactive dashboard demonstrating four distinct security scenarios:
+    Deny --> Audit
+    Allow --> Audit
+    HITL --> Audit
+```
 
-Scenario 1 (Legitimate Task): A safe internal directory lookup is executed seamlessly.
+---
 
-Scenario 2 (Break Safely vs. Prove the Fix): The agent reads a poisoned email containing an indirect prompt injection. With the shield OFF, sensitive data is leaked. With the shield ON, TaintGuard detects the taint, blocks the exfiltration, and logs the cited evidence.
+## 🔐 How TaintGuard Proves the Fix (Decision Matrix)
 
-Scenario 3 (High-Impact Action): A request for sensitive data triggers the REQUIRE_APPROVAL gate, pausing for human review.
+Every tool is cryptographically signed with a permission profile (`TIER_1` to `TIER_3`). The Policy Enforcement Point evaluates the **Tool Tier** against the **Session Taint State**:
 
-Scenario 4 (Permission Violation): An agent attempts a wire transfer beyond its role profile, triggering a strict DENY.
+| Tool Permission Tier | Example Tool | Session: `🟢 UNTAINTED` | Session: `🔴 TAINTED` (Normal Prompt) | Session: `🔴 TAINTED` (Explicit User Intent) |
+| :--- | :--- | :--- | :--- | :--- |
+| **`TIER_1` (Safe Read)** | `lookup_internal_directory` | `✅ ALLOW` | `✅ ALLOW` | `✅ ALLOW` |
+| **`TIER_1` (External Ingest)** | `read_external_document` | `✅ ALLOW` *(Flips state to `TAINTED`)* | `✅ ALLOW` | `✅ ALLOW` |
+| **`TIER_2` (Sensitive Export)** | `export_payroll_data` | `⚠️ REQUIRE_APPROVAL` | `❌ DENY` *(Blocks Hijack)* | `⚠️ REQUIRE_APPROVAL` *(Human Gate)* |
+| **`TIER_3` (Admin / Financial)** | `execute_wire_transfer` | `❌ DENY` *(Role Violation)* | `❌ DENY` *(Hard Block)* | `❌ DENY` *(Hard Block)* |
 
-Every decision is permanently recorded in the Immutable Audit Log with an inspectable reason.
+> **⚙️ Built-In Failsafe Guarantee:** If the external Gemini Semantic Judge API is unreachable, rate-limited, or unconfigured, TaintGuard never fails open. It automatically falls back to its deterministic rule engine, strictly barring any `TAINTED` session from executing `TIER_2` or `TIER_3` tools.
 
-🚀 How to Run Locally
+---
 
-Prerequisites: Python 3.10+
+## 📂 Repository Structure
 
-Clone the repository:
+```text
+taintguard/
+├── .streamlit/
+│   └── config.toml          # Custom enterprise dark/cybersecurity UI theme
+├── app.py                   # Core application: Agent simulator, Taint Engine, PEP Gate & UI
+├── requirements.txt         # Python dependencies (streamlit, google-generativeai, pandas)
+├── .gitignore               # Excludes virtual environments, secrets, and cache files
+└── README.md                # Architecture documentation & setup guide
+```
 
-git clone https://github.com/YOUR_USERNAME/taintguard.git
+---
+
+## 🧪 Live Demo Scenarios (4-State Verification)
+
+1. **Scenario 1 — Legitimate Task (`ALLOW`):** Safe internal directory lookup using a `TIER_1` tool in an untainted session.
+2. **Scenario 2 — Indirect Prompt Injection (`BREAK SAFELY` vs. `PROVE THE FIX`):** 
+   * **Shield OFF:** Agent reads poisoned *Invoice #9941* and leaks employee payroll PII.
+   * **Shield ON:** `read_external_document` flips session to `TAINTED`[cite: 1]. The PEP catches the unauthorized `export_payroll_data` call and blocks exfiltration[cite: 1].
+3. **Scenario 3 — High-Impact Action (`REQUIRE_APPROVAL`):** Sensitive tool requests trigger a Human-in-the-Loop confirmation gate before execution[cite: 1].
+4. **Scenario 4 — Hard Permission Violation (`DENY`):** Agent attempts an unauthorized `TIER_3` wire transfer and is deterministically blocked at the perimeter[cite: 1].
+
+---
+
+## 🚀 Quickstart (Run Locally)
+
+```bash
+# 1. Clone the repository
+git clone [https://github.com/YOUR_USERNAME/taintguard.git](https://github.com/YOUR_USERNAME/taintguard.git)
 cd taintguard
 
-
-Install the required dependencies:
-
+# 2. Install dependencies
 pip install -r requirements.txt
 
-
-Launch the dashboard:
-
+# 3. Launch the TaintGuard dashboard
 streamlit run app.py
+```
+*(Optional: Enter a API Key in the sidebar for live Semantic PEP reasoning, or leave blank to test the automatic **Deterministic Failsafe** engine).*
